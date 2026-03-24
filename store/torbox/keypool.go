@@ -155,20 +155,66 @@ func (p *KeyPool) RecordError(apiKey string, statusCode int) {
 
 func (p *KeyPool) GetKeyForRequest(incomingKey string) string {
 	p.mu.Lock()
-	isPoolKey := false
+	defer p.mu.Unlock()
+
+	now := time.Now()
+
+	// Find the incoming key in the pool
+	var incomingPoolKey *poolKey
 	for _, k := range p.keys {
 		if k.key == incomingKey {
-			isPoolKey = true
+			incomingPoolKey = k
 			break
 		}
 	}
-	p.mu.Unlock()
 
-	if !isPoolKey {
+	// Not a pool key - pass through unchanged
+	if incomingPoolKey == nil {
 		return incomingKey
 	}
 
-	return p.SelectKey()
+	// Try to use the incoming key if it's healthy (sticky preference)
+	if incomingPoolKey.health == KeyHealthHealthy {
+		return incomingPoolKey.key
+	}
+
+	// Incoming key is unhealthy - check if it should auto-recover
+	if now.Sub(incomingPoolKey.lastErrorAt) >= keyPoolRecoveryTimeout {
+		log.Info("key auto-recovered", "key", maskKey(incomingPoolKey.key), "previous_status", string(incomingPoolKey.health))
+		incomingPoolKey.health = KeyHealthHealthy
+		return incomingPoolKey.key
+	}
+
+	// Incoming key is unhealthy - find the best healthy alternative
+	var best *poolKey
+	bestUsage := -1
+	for _, k := range p.keys {
+		if k.key == incomingKey {
+			continue
+		}
+		if k.health != KeyHealthHealthy {
+			if now.Sub(k.lastErrorAt) >= keyPoolRecoveryTimeout {
+				log.Info("key auto-recovered", "key", maskKey(k.key), "previous_status", string(k.health))
+				k.health = KeyHealthHealthy
+			} else {
+				continue
+			}
+		}
+		usage := k.rollingUsage(now)
+		if best == nil || usage < bestUsage {
+			best = k
+			bestUsage = usage
+		}
+	}
+
+	if best != nil {
+		log.Info("using alternate key", "original", maskKey(incomingKey), "alternate", maskKey(best.key), "reason", string(incomingPoolKey.health))
+		return best.key
+	}
+
+	// All keys unhealthy - use the incoming key anyway
+	log.Warn("all keys unhealthy, using original key", "key", maskKey(incomingKey))
+	return incomingKey
 }
 
 func (p *KeyPool) HasKey(apiKey string) bool {
