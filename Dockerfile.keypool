@@ -5,8 +5,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/dash/package.json apps/dash/
-COPY apps/package.json apps/ 2>/dev/null || true
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
 COPY apps/ apps/
 RUN pnpm run dash:build
