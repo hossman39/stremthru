@@ -60,11 +60,7 @@ func NewAPIClient(conf *APIClientConfig) *APIClient {
 	c.reqQuery = func(query *url.Values, params request.Context) {}
 
 	c.reqHeader = func(header *http.Header, params request.Context) {
-		apiKey := params.GetAPIKey(c.apiKey)
-		if Pool != nil {
-			apiKey = Pool.GetKeyForRequest(apiKey)
-		}
-		header.Add("Authorization", "Bearer "+apiKey)
+		header.Add("Authorization", "Bearer "+params.GetAPIKey(c.apiKey))
 		header.Add("User-Agent", c.agent)
 	}
 

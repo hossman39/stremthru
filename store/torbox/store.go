@@ -82,6 +82,9 @@ func (c *StoreClient) setCachedGetUser(params *store.GetUserParams, v *store.Use
 }
 
 func (c *StoreClient) GetUser(params *store.GetUserParams) (*store.User, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	if v := c.getCachedGetUser(params); v != nil {
 		return v, nil
 	}
@@ -112,6 +115,9 @@ func (c *StoreClient) GetUser(params *store.GetUserParams) (*store.User, error) 
 }
 
 func (c *StoreClient) CheckMagnet(params *store.CheckMagnetParams) (*store.CheckMagnetData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	magnetByHash := make(map[string]core.MagnetLink, len(params.Magnets))
 	hashes := make([]string, len(params.Magnets))
 
@@ -260,6 +266,9 @@ func (l LockedFileLink) Parse() (id, fileId int, err error) {
 }
 
 func (c *StoreClient) AddMagnet(params *store.AddMagnetParams) (*store.AddMagnetData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	ctParams := &CreateTorrentParams{
 		Ctx:      params.Ctx,
 		AllowZip: false,
@@ -359,6 +368,9 @@ func (c *StoreClient) setCachedGenerateLink(params *store.GenerateLinkParams, to
 }
 
 func (c *StoreClient) GenerateLink(params *store.GenerateLinkParams) (*store.GenerateLinkData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	torrentId, fileId, err := LockedFileLink(params.Link).Parse()
 	if err != nil {
 		error := core.NewAPIError("invalid link")
@@ -399,6 +411,9 @@ func (c *StoreClient) setCachedGetMagnet(params *store.GetMagnetParams, v *store
 }
 
 func (c *StoreClient) GetMagnet(params *store.GetMagnetParams) (_ *store.GetMagnetData, err error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	if v := c.getCachedGetMagnet(params); v != nil {
 		return v, nil
 	}
@@ -461,6 +476,9 @@ func (c *StoreClient) GetMagnet(params *store.GetMagnetParams) (_ *store.GetMagn
 }
 
 func (c *StoreClient) ListMagnets(params *store.ListMagnetsParams) (*store.ListMagnetsData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	start := time.Now()
 	res, err := c.client.ListTorrents(&ListTorrentsParams{
 		Ctx:         params.Ctx,
@@ -507,6 +525,9 @@ func (c *StoreClient) ListMagnets(params *store.ListMagnetsParams) (*store.ListM
 }
 
 func (c *StoreClient) RemoveMagnet(params *store.RemoveMagnetParams) (*store.RemoveMagnetData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	id, err := strconv.Atoi(params.Id)
 	if err != nil {
 		return nil, err
@@ -526,6 +547,9 @@ func (c *StoreClient) RemoveMagnet(params *store.RemoveMagnetParams) (*store.Rem
 }
 
 func (c *StoreClient) CheckNewz(params *store.CheckNewzParams) (*store.CheckNewzData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	cucParams := &CheckUsenetCachedParams{
 		Hashes:    params.Hashes,
 		ListFiles: true,
@@ -573,6 +597,9 @@ func (c *StoreClient) CheckNewz(params *store.CheckNewzParams) (*store.CheckNewz
 }
 
 func (c *StoreClient) AddNewz(params *store.AddNewzParams) (*store.AddNewzData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	rParams := &CreateUsenetDownloadParams{
 		Ctx:  params.Ctx,
 		Link: params.Link,
@@ -593,6 +620,9 @@ func (c *StoreClient) AddNewz(params *store.AddNewzParams) (*store.AddNewzData, 
 }
 
 func (c *StoreClient) GetNewz(params *store.GetNewzParams) (*store.GetNewzData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	id, err := strconv.Atoi(params.Id)
 	if err != nil {
 		return nil, err
@@ -638,6 +668,9 @@ func (c *StoreClient) GetNewz(params *store.GetNewzParams) (*store.GetNewzData, 
 }
 
 func (c *StoreClient) ListNewz(params *store.ListNewzParams) (_ *store.ListNewzData, err error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	start := time.Now()
 	res, err := c.client.ListUsenetDownload(&ListUsenetDownloadParams{
 		Ctx:         params.Ctx,
@@ -683,6 +716,9 @@ func (c *StoreClient) ListNewz(params *store.ListNewzParams) (_ *store.ListNewzD
 }
 
 func (c *StoreClient) RemoveNewz(params *store.RemoveNewzParams) (*store.RemoveNewzData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	id, err := strconv.Atoi(params.Id)
 	if err != nil {
 		return nil, err
@@ -702,6 +738,9 @@ func (c *StoreClient) RemoveNewz(params *store.RemoveNewzParams) (*store.RemoveN
 }
 
 func (c *StoreClient) GenerateNewzLink(params *store.GenerateNewzLinkParams) (*store.GenerateNewzLinkData, error) {
+	if Pool != nil {
+		params.APIKey = Pool.GetKeyForRequest(params.GetAPIKey(c.client.apiKey))
+	}
 	usenetId, fileId, err := LockedFileLink(params.Link).Parse()
 	if err != nil {
 		error := core.NewAPIError("invalid link")
