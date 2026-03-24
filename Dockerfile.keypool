@@ -8,8 +8,7 @@ COPY apps/dash/package.json apps/dash/
 COPY apps/package.json apps/ 2>/dev/null || true
 RUN pnpm install --frozen-lockfile || pnpm install
 
-COPY apps/dash apps/dash
-COPY apps/components.json apps/src apps/tsconfig.json apps/vite.config.ts apps/
+COPY apps/ apps/
 RUN pnpm run dash:build
 
 FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
