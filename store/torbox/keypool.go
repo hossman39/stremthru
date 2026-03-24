@@ -1,0 +1,201 @@
+package torbox
+
+import (
+	"strings"
+	"sync"
+	"time"
+)
+
+type KeyHealth string
+
+const (
+	KeyHealthHealthy     KeyHealth = "healthy"
+	KeyHealthRateLimited KeyHealth = "rate_limited"
+	KeyHealthBlocked     KeyHealth = "blocked"
+)
+
+const (
+	keyPoolRollingWindow   = 60 * time.Minute
+	keyPoolRecoveryTimeout = 5 * time.Minute
+)
+
+type poolKey struct {
+	key         string
+	health      KeyHealth
+	usageTimes  []time.Time
+	lastErrorAt time.Time
+}
+
+func (k *poolKey) rollingUsage(now time.Time) int {
+	cutoff := now.Add(-keyPoolRollingWindow)
+	count := 0
+	for _, t := range k.usageTimes {
+		if t.After(cutoff) {
+			count++
+		}
+	}
+	return count
+}
+
+func (k *poolKey) pruneUsage(now time.Time) {
+	cutoff := now.Add(-keyPoolRollingWindow)
+	pruned := k.usageTimes[:0]
+	for _, t := range k.usageTimes {
+		if t.After(cutoff) {
+			pruned = append(pruned, t)
+		}
+	}
+	k.usageTimes = pruned
+}
+
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "***"
+	}
+	return key[:4] + "..." + key[len(key)-4:]
+}
+
+type KeyPool struct {
+	mu   sync.Mutex
+	keys []*poolKey
+}
+
+func NewKeyPool(apiKeys []string) *KeyPool {
+	keys := make([]*poolKey, len(apiKeys))
+	for i, k := range apiKeys {
+		keys[i] = &poolKey{
+			key:        k,
+			health:     KeyHealthHealthy,
+			usageTimes: []time.Time{},
+		}
+	}
+	log.Info("key pool initialized", "key_count", len(keys))
+	return &KeyPool{keys: keys}
+}
+
+func (p *KeyPool) SelectKey() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	now := time.Now()
+
+	var best *poolKey
+	bestUsage := -1
+
+	for _, k := range p.keys {
+		if k.health != KeyHealthHealthy {
+			if now.Sub(k.lastErrorAt) >= keyPoolRecoveryTimeout {
+				log.Info("key auto-recovered", "key", maskKey(k.key), "previous_status", string(k.health))
+				k.health = KeyHealthHealthy
+			} else {
+				continue
+			}
+		}
+
+		usage := k.rollingUsage(now)
+		if best == nil || usage < bestUsage {
+			best = k
+			bestUsage = usage
+		}
+	}
+
+	if best != nil {
+		return best.key
+	}
+
+	// all keys unhealthy, pick the one marked unhealthy longest ago
+	var oldest *poolKey
+	for _, k := range p.keys {
+		if oldest == nil || k.lastErrorAt.Before(oldest.lastErrorAt) {
+			oldest = k
+		}
+	}
+	if oldest != nil {
+		log.Warn("all keys unhealthy, using oldest errored key", "key", maskKey(oldest.key))
+		return oldest.key
+	}
+
+	return ""
+}
+
+func (p *KeyPool) RecordUsage(apiKey string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	now := time.Now()
+	for _, k := range p.keys {
+		if k.key == apiKey {
+			k.usageTimes = append(k.usageTimes, now)
+			k.pruneUsage(now)
+			return
+		}
+	}
+}
+
+func (p *KeyPool) RecordError(apiKey string, statusCode int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, k := range p.keys {
+		if k.key == apiKey {
+			switch statusCode {
+			case 429:
+				k.health = KeyHealthRateLimited
+			case 401, 403:
+				k.health = KeyHealthBlocked
+			default:
+				return
+			}
+			k.lastErrorAt = time.Now()
+			log.Warn("key marked unhealthy", "key", maskKey(k.key), "status", k.health, "http_code", statusCode)
+			return
+		}
+	}
+}
+
+func (p *KeyPool) GetKeyForRequest(incomingKey string) string {
+	p.mu.Lock()
+	isPoolKey := false
+	for _, k := range p.keys {
+		if k.key == incomingKey {
+			isPoolKey = true
+			break
+		}
+	}
+	p.mu.Unlock()
+
+	if !isPoolKey {
+		return incomingKey
+	}
+
+	return p.SelectKey()
+}
+
+func (p *KeyPool) HasKey(apiKey string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, k := range p.keys {
+		if k.key == apiKey {
+			return true
+		}
+	}
+	return false
+}
+
+var creationPaths = []string{
+	"/v1/api/torrents/createtorrent",
+	"/v1/api/usenet/createusenetdownload",
+	"/v1/api/webdl/createwebdownload",
+}
+
+func IsCreationPath(path string) bool {
+	for _, p := range creationPaths {
+		if strings.HasSuffix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+var Pool *KeyPool

@@ -3,6 +3,7 @@ package torbox
 import (
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/MunifTanjim/stremthru/core"
 	"github.com/MunifTanjim/stremthru/internal/config"
@@ -59,7 +60,11 @@ func NewAPIClient(conf *APIClientConfig) *APIClient {
 	c.reqQuery = func(query *url.Values, params request.Context) {}
 
 	c.reqHeader = func(header *http.Header, params request.Context) {
-		header.Add("Authorization", "Bearer "+params.GetAPIKey(c.apiKey))
+		apiKey := params.GetAPIKey(c.apiKey)
+		if Pool != nil {
+			apiKey = Pool.GetKeyForRequest(apiKey)
+		}
+		header.Add("Authorization", "Bearer "+apiKey)
 		header.Add("User-Agent", c.agent)
 	}
 
@@ -91,11 +96,29 @@ func (c APIClient) Request(method, path string, params request.Context, v Respon
 			err.StatusCode = http.StatusBadRequest
 		}
 		err.Pack(req)
+		if Pool != nil && IsCreationPath(path) && res != nil {
+			if apiKey := extractBearerToken(req); apiKey != "" {
+				Pool.RecordError(apiKey, res.StatusCode)
+			}
+		}
 		return res, err
+	}
+	if Pool != nil && IsCreationPath(path) {
+		if apiKey := extractBearerToken(req); apiKey != "" {
+			Pool.RecordUsage(apiKey)
+		}
 	}
 	return res, nil
 }
 
 func (c APIClient) RequestSearch(method, path string, params request.Context, v ResponseEnvelop) (*http.Response, error) {
 	return c.Request(method, SearchAPIBaseURL.JoinPath(path).String(), params, v)
+}
+
+func extractBearerToken(req *http.Request) string {
+	auth := req.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer ") {
+		return strings.TrimPrefix(auth, "Bearer ")
+	}
+	return ""
 }
