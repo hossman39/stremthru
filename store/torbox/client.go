@@ -92,9 +92,12 @@ func (c APIClient) Request(method, path string, params request.Context, v Respon
 			err.StatusCode = http.StatusBadRequest
 		}
 		err.Pack(req)
-		if Pool != nil && IsCreationPath(path) && res != nil {
+		if Pool != nil && res != nil {
 			if apiKey := extractBearerToken(req); apiKey != "" {
-				Pool.RecordError(apiKey, res.StatusCode)
+				if IsCreationPath(path) || (IsCredentialValidationPath(path) && (res.StatusCode == 401 || res.StatusCode == 403)) {
+					// Restrict key blocking to paths where auth failures unambiguously reflect key health.
+					Pool.RecordError(apiKey, res.StatusCode)
+				}
 			}
 		}
 		return res, err

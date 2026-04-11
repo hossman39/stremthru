@@ -14,7 +14,7 @@ const (
 	KeyHealthBlocked     KeyHealth = "blocked"
 )
 
-const (
+var (
 	keyPoolRollingWindow   = 60 * time.Minute
 	keyPoolRecoveryTimeout = 5 * time.Minute
 )
@@ -61,61 +61,20 @@ type KeyPool struct {
 }
 
 func NewKeyPool(apiKeys []string) *KeyPool {
-	keys := make([]*poolKey, len(apiKeys))
-	for i, k := range apiKeys {
-		keys[i] = &poolKey{
+	var keys []*poolKey
+	for _, k := range apiKeys {
+		if k == "" {
+			log.Warn("skipping empty key in pool")
+			continue
+		}
+		keys = append(keys, &poolKey{
 			key:        k,
 			health:     KeyHealthHealthy,
 			usageTimes: []time.Time{},
-		}
+		})
 	}
 	log.Info("key pool initialized", "key_count", len(keys))
 	return &KeyPool{keys: keys}
-}
-
-func (p *KeyPool) SelectKey() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	now := time.Now()
-
-	var best *poolKey
-	bestUsage := -1
-
-	for _, k := range p.keys {
-		if k.health != KeyHealthHealthy {
-			if now.Sub(k.lastErrorAt) >= keyPoolRecoveryTimeout {
-				log.Info("key auto-recovered", "key", maskKey(k.key), "previous_status", string(k.health))
-				k.health = KeyHealthHealthy
-			} else {
-				continue
-			}
-		}
-
-		usage := k.rollingUsage(now)
-		if best == nil || usage < bestUsage {
-			best = k
-			bestUsage = usage
-		}
-	}
-
-	if best != nil {
-		return best.key
-	}
-
-	// all keys unhealthy, pick the one marked unhealthy longest ago
-	var oldest *poolKey
-	for _, k := range p.keys {
-		if oldest == nil || k.lastErrorAt.Before(oldest.lastErrorAt) {
-			oldest = k
-		}
-	}
-	if oldest != nil {
-		log.Warn("all keys unhealthy, using oldest errored key", "key", maskKey(oldest.key))
-		return oldest.key
-	}
-
-	return ""
 }
 
 func (p *KeyPool) RecordUsage(apiKey string) {
@@ -217,26 +176,27 @@ func (p *KeyPool) GetKeyForRequest(incomingKey string) string {
 	return incomingKey
 }
 
-func (p *KeyPool) HasKey(apiKey string) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for _, k := range p.keys {
-		if k.key == apiKey {
-			return true
-		}
-	}
-	return false
-}
-
 var creationPaths = []string{
 	"/v1/api/torrents/createtorrent",
 	"/v1/api/usenet/createusenetdownload",
 	"/v1/api/webdl/createwebdownload",
 }
 
+var credentialValidationPaths = []string{
+	"/v1/api/user/me",
+}
+
 func IsCreationPath(path string) bool {
 	for _, p := range creationPaths {
+		if strings.HasSuffix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsCredentialValidationPath(path string) bool {
+	for _, p := range credentialValidationPaths {
 		if strings.HasSuffix(path, p) {
 			return true
 		}
